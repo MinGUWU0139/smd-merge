@@ -2,6 +2,15 @@
 
 把「主骨骼 / 机件动画 / 身体动画」三个 SMD 合成一个动画文件，附带一个手臂动作重定向工具。
 
+## 下载（Windows，免编译）
+
+| 程序 | 说明 | 直链 |
+| --- | --- | --- |
+| `smd_merge.exe` | 三文件拼接（图形界面） | https://github.com/MinGUWU0139/smd-merge/raw/main/bin/smd_merge.exe |
+| `sleeve_retarget.exe` | 手臂动作重定向 | https://github.com/MinGUWU0139/smd-merge/raw/main/bin/sleeve_retarget.exe |
+
+> 仓库是私有的，下载需要登录你的 GitHub 账号；想要公开直链可以把仓库改成 Public。
+
 ## 功能
 
 - **三文件拼接**：主骨骼决定骨骼表，身体动画提供身体骨骼，机件动画提供枪械机件（滑套、弹匣、击锤等）
@@ -15,6 +24,9 @@ src/
   smd_merge_gui.cs     图形界面版（三文件拼接）
   smd_merge.cs         控制台版
   sleeve_retarget.cs   手臂动作重定向
+bin/
+  smd_merge.exe        编译好的图形界面版
+  sleeve_retarget.exe  编译好的重定向版
 build.bat              编译
 run.bat                运行
 注意事项与声明.txt
@@ -53,7 +65,7 @@ smd_merge.exe --cli <主骨骼.smd> <机件动画.smd> <身体动画.smd> [输�
 sleeve_retarget.exe <动作源.smd> <目标骨架静止.smd> <输出.smd>
 ```
 
-在各自的静止姿势坐标系里套增量：`D = 源静止⁻¹ × 源当前`，`目标世界 = 目标静止 × D`，再换算回局部。骨骼位置沿用目标骨架的静止偏移，第 0 帧与目标静止姿势一致。
+在各自的静止姿势坐标系里套增量：`D = 源静止⁻¹ × 当前`，`目标世界 = 目标静止 × D`，再换算回局部。骨骼位置沿用目标骨架的静止偏移，第 0 帧与目标静止姿势一致。
 
 ## 坐标约定
 
