@@ -11,7 +11,7 @@
 | --- | --- |
 | [smd_merge.exe](https://github.com/MinGUWU0139/smd-merge/raw/main/bin/smd_merge.exe) | 图形界面版，含「动画拼接」和「手臂重定向」两个页签 |
 
-> 仓库是私有的，下载需要登录你的 GitHub 账号；想要公开直链可以把仓库改成 Public。
+
 
 ## 功能
 
