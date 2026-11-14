@@ -11,7 +11,7 @@
 | --- | --- |
 | [smd_merge.exe](https://github.com/MinGUWU0139/smd-merge/raw/main/bin/smd_merge.exe) | 图形界面版，含「动画拼接」和「手臂重定向」两个页签 |
 
-
+> 仓库已公开，直接点上面的链接即可下载。
 
 ## 功能
 
@@ -80,6 +80,3 @@ smd_merge.exe --retarget <动作源.smd> <目标骨架静止.smd> [输出.smd]
 ## 坐标约定
 
 SMD 的欧拉角按 `R = Rz(rz) · Ry(ry) · Rx(rx)` 解释（Blender `XYZ` 导出）。
-
-
-## 都是大肥鱼deepseek写的
