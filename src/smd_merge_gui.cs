@@ -44,6 +44,8 @@ class SmdMergeApp
     [STAThread]
     static int Main(string[] args)
     {
+        if (Array.IndexOf(args, "--retarget") >= 0)
+            return RunRetargetCli(args);
         if (Array.IndexOf(args, "--cli") >= 0)
             return RunCli(args);
 
@@ -77,6 +79,36 @@ class SmdMergeApp
         if (files.Count >= 4) outp = EnsureSmdExt(files[3]);
         else if (files.Count >= 1) outp = EnsureSmdExt(DefaultOutput(files[0]));
         if (outp != null) { try { File.WriteAllText(outp + ".log", sb.ToString(), new UTF8Encoding(false)); } catch { } }
+        return code;
+    }
+
+    // 手臂重定向命令行：--retarget <动作源> <目标骨架> <输出>
+    static int RunRetargetCli(string[] args)
+    {
+        List<string> files = new List<string>();
+        for (int i = 0; i < args.Length; i++)
+        {
+            string a = args[i].Trim();
+            if (a.Length == 0 || a == "--retarget") continue;
+            files.Add(a);
+        }
+        StringBuilder sb = new StringBuilder();
+        int code = 1;
+        try
+        {
+            if (files.Count < 2)
+            {
+                sb.Append("错误: 需要至少两个文件: 动作源 目标骨架 [输出]\n");
+            }
+            else
+            {
+                string outp = EnsureSmdExt(files.Count > 2 ? files[2] : DefaultRetargetOutput(files[0]));
+                SleeveRetarget.Run(files[0], files[1], outp, delegate(string s) { sb.Append(s).Append('\n'); });
+                code = 0;
+                try { File.WriteAllText(outp + ".log", sb.ToString(), new UTF8Encoding(false)); } catch { }
+            }
+        }
+        catch (Exception ex) { sb.Append("错误: ").Append(ex.Message).Append('\n'); }
         return code;
     }
 
@@ -222,6 +254,13 @@ class SmdMergeApp
         return string.IsNullOrEmpty(dir) ? name : Path.Combine(dir, name);
     }
 
+    static string DefaultRetargetOutput(string srcPath)
+    {
+        string dir = Path.GetDirectoryName(srcPath);
+        string name = Path.GetFileNameWithoutExtension(srcPath) + "_retarget.smd";
+        return string.IsNullOrEmpty(dir) ? name : Path.Combine(dir, name);
+    }
+
     static string EnsureSmdExt(string path)
     {
         if (string.IsNullOrEmpty(path)) return path;
@@ -356,50 +395,97 @@ class SmdMergeApp
         Button goBtn = new Button();
         TextBox logBox = new TextBox();
 
+        // 页 2：手臂重定向
+        TextBox srcBox = new TextBox();
+        TextBox tgtBox = new TextBox();
+        TextBox out2Box = new TextBox();
+        Button retargetBtn = new Button();
+
+        TabControl tabs;
+        Control host;
+
         public MainForm()
         {
-            Text = "SMD 动画拼接 v2.0（主骨骼 + 机件 + 身体）";
-            ClientSize = new Size(760, 640);
+            Text = "SMD 动画拼接工具 v2.1（拼接 + 手臂重定向）";
+            ClientSize = new Size(760, 664);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Microsoft YaHei", 9f);
             AllowDrop = true;
             KeyPreview = true;
 
-            AddLabel("① 主骨骼 / 基底文件（提供骨骼层级和静止姿势，如 usp_s.smd）", 16, 14);
-            SetupTextBox(baseBox, 16, 38, 520);
-            AddButton("浏览...", 544, 38, 90, OnBrowseBase);
-            AddButton("自动配对", 640, 38, 104, OnAutoPair);
+            tabs = new TabControl();
+            tabs.Location = new Point(8, 8);
+            tabs.Size = new Size(744, 404);
+            Controls.Add(tabs);
 
-            AddLabel("② 机件动画（提供 slide / clip / hammer / silencer / trigger）", 16, 78);
-            SetupTextBox(mechBox, 16, 102, 520);
-            AddButton("浏览...", 544, 102, 90, OnBrowseMech);
+            TabPage tab1 = new TabPage("动画拼接（三文件）");
+            tabs.TabPages.Add(tab1);
+            TabPage tab2 = new TabPage("手臂重定向");
+            tabs.TabPages.Add(tab2);
 
-            AddLabel("③ 身体动画（提供 root_motion / wpn / 手臂 / 手指）", 16, 142);
-            SetupTextBox(bodyBox, 16, 166, 520);
-            AddButton("浏览...", 544, 166, 90, OnBrowseBody);
+            // ---------------- 页 1：三文件拼接 ----------------
+            host = tab1;
+            AddLabel("① 主骨骼 / 基底文件（提供骨骼层级和静止姿势，如 usp_s.smd）", 8, 14);
+            SetupTextBox(baseBox, 8, 38, 500);
+            AddButton("浏览...", 516, 38, 90, OnBrowseBase);
+            AddButton("自动配对", 612, 38, 116, OnAutoPair);
 
-            AddLabel("④ 输出文件（留空则自动生成到主骨骼旁，文件名 _reload.smd）", 16, 206);
-            SetupTextBox(outBox, 16, 230, 520);
-            AddButton("另存为...", 544, 230, 90, OnBrowseOut);
+            AddLabel("② 机件动画（提供 slide / clip / hammer / silencer / trigger）", 8, 78);
+            SetupTextBox(mechBox, 8, 102, 500);
+            AddButton("浏览...", 516, 102, 90, OnBrowseMech);
 
-            AddLabel("⑤ 位置放大倍数（骨骼位置坐标乘以该值，1 = 不放大）", 16, 270);
-            scaleBox.Location = new Point(400, 266);
+            AddLabel("③ 身体动画（提供 root_motion / wpn / 手臂 / 手指）", 8, 142);
+            SetupTextBox(bodyBox, 8, 166, 500);
+            AddButton("浏览...", 516, 166, 90, OnBrowseBody);
+
+            AddLabel("④ 输出文件（留空则自动生成到主骨骼旁，文件名 _reload.smd）", 8, 206);
+            SetupTextBox(outBox, 8, 230, 500);
+            AddButton("另存为...", 516, 230, 90, OnBrowseOut);
+
+            AddLabel("⑤ 位置放大倍数（骨骼位置坐标乘以该值，1 = 不放大）", 8, 270);
+            scaleBox.Location = new Point(380, 266);
             scaleBox.Size = new Size(80, 24);
             scaleBox.Text = "1";
-            Controls.Add(scaleBox);
+            tab1.Controls.Add(scaleBox);
 
             goBtn.Text = "开始拼接  (回车)";
-            goBtn.Location = new Point(16, 306);
-            goBtn.Size = new Size(728, 50);
+            goBtn.Location = new Point(8, 306);
+            goBtn.Size = new Size(720, 46);
             goBtn.Font = new Font("Microsoft YaHei", 11f, FontStyle.Bold);
             goBtn.Click += new EventHandler(OnGo);
-            Controls.Add(goBtn);
+            tab1.Controls.Add(goBtn);
 
+            // ---------------- 页 2：手臂重定向 ----------------
+            host = tab2;
+            AddLabel("① 动作源（含手臂动画的 SMD，如 1.smd）", 8, 14);
+            SetupTextBox(srcBox, 8, 38, 500);
+            AddButton("浏览...", 516, 38, 90, OnBrowseSrc2);
+
+            AddLabel("② 目标骨架（目标模型静止姿势，如 idle.smd / v_sleeve_ct.smd）", 8, 78);
+            SetupTextBox(tgtBox, 8, 102, 500);
+            AddButton("浏览...", 516, 102, 90, OnBrowseTgt2);
+
+            AddLabel("③ 输出文件（留空则自动生成到动作源旁，文件名 _retarget.smd）", 8, 142);
+            SetupTextBox(out2Box, 8, 166, 500);
+            AddButton("另存为...", 516, 166, 90, OnBrowseOut2);
+
+            retargetBtn.Text = "开始重定向  (回车)";
+            retargetBtn.Location = new Point(8, 210);
+            retargetBtn.Size = new Size(720, 46);
+            retargetBtn.Font = new Font("Microsoft YaHei", 11f, FontStyle.Bold);
+            retargetBtn.Click += new EventHandler(OnRetargetGo);
+            tab2.Controls.Add(retargetBtn);
+
+            AddLabel("说明：只输出动画（nodes + skeleton），位置沿用目标模型静止值，", 8, 268);
+            AddLabel("旋转按静止姿势坐标系里的世界空间增量重定向。", 8, 290);
+
+            // ---------------- 日志（两页共用） ----------------
+            host = this;
             logBox.Multiline = true;
             logBox.ReadOnly = true;
             logBox.ScrollBars = ScrollBars.Vertical;
-            logBox.Location = new Point(16, 370);
-            logBox.Size = new Size(728, 254);
+            logBox.Location = new Point(8, 420);
+            logBox.Size = new Size(744, 232);
             logBox.BackColor = Color.White;
             Controls.Add(logBox);
 
@@ -417,7 +503,7 @@ class SmdMergeApp
             l.Text = text;
             l.AutoSize = true;
             l.Location = new Point(x, y);
-            Controls.Add(l);
+            host.Controls.Add(l);
         }
 
         void SetupTextBox(TextBox tb, int x, int y, int w)
@@ -434,7 +520,7 @@ class SmdMergeApp
                 string[] fs = (string[])e.Data.GetData(DataFormats.FileDrop);
                 if (fs != null && fs.Length > 0) tb.Text = fs[0];
             });
-            Controls.Add(tb);
+            host.Controls.Add(tb);
         }
 
         void AddButton(string text, int x, int y, int w, EventHandler h)
@@ -444,7 +530,7 @@ class SmdMergeApp
             b.Location = new Point(x, y);
             b.Size = new Size(w, 26);
             b.Click += h;
-            Controls.Add(b);
+            host.Controls.Add(b);
         }
 
         void OnBrowseBase(object s, EventArgs e) { BrowseInto(baseBox, "选择主骨骼 / 基底文件"); AutoFillOutput(); }
@@ -471,6 +557,71 @@ class SmdMergeApp
             if (outBox.Text.Trim().Length > 0) d.FileName = outBox.Text.Trim();
             else if (baseBox.Text.Trim().Length > 0) d.FileName = DefaultOutput(baseBox.Text.Trim());
             if (d.ShowDialog(this) == DialogResult.OK) outBox.Text = d.FileName;
+        }
+
+        // ---------------- 页 2：手臂重定向 ----------------
+        void OnBrowseSrc2(object s, EventArgs e) { BrowseInto(srcBox, "选择动作源（含手臂动画的 SMD）"); AutoFillRetargetOutput(); }
+        void OnBrowseTgt2(object s, EventArgs e) { BrowseInto(tgtBox, "选择目标骨架（静止姿势 SMD）"); AutoFillRetargetOutput(); }
+
+        void OnBrowseOut2(object s, EventArgs e)
+        {
+            SaveFileDialog d = new SaveFileDialog();
+            d.Filter = "SMD 文件 (*.smd)|*.smd";
+            d.DefaultExt = "smd";
+            d.AddExtension = true;
+            d.Title = "选择输出文件";
+            if (out2Box.Text.Trim().Length > 0) d.FileName = out2Box.Text.Trim();
+            else if (srcBox.Text.Trim().Length > 0) d.FileName = DefaultRetargetOutput(srcBox.Text.Trim());
+            if (d.ShowDialog(this) == DialogResult.OK) out2Box.Text = d.FileName;
+        }
+
+        void AutoFillRetargetOutput()
+        {
+            string sp = srcBox.Text.Trim();
+            if (sp.Length > 0 && out2Box.Text.Trim().Length == 0) out2Box.Text = DefaultRetargetOutput(sp);
+        }
+
+        void OnRetargetGo(object s, EventArgs e)
+        {
+            string src = srcBox.Text.Trim();
+            string tgt = tgtBox.Text.Trim();
+            string outp = out2Box.Text.Trim();
+
+            if (src.Length == 0) { Log("错误: 请先选择动作源"); return; }
+            if (tgt.Length == 0) { Log("错误: 请先选择目标骨架"); return; }
+            if (!File.Exists(src)) { Log("错误: 动作源不存在: " + src); return; }
+            if (!File.Exists(tgt)) { Log("错误: 目标骨架不存在: " + tgt); return; }
+            if (outp.Length == 0) { outp = DefaultRetargetOutput(src); out2Box.Text = outp; }
+
+            try
+            {
+                if (string.Equals(Path.GetFullPath(outp), Path.GetFullPath(src), StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(Path.GetFullPath(outp), Path.GetFullPath(tgt), StringComparison.OrdinalIgnoreCase))
+                {
+                    Log("错误: 输出文件不能与输入文件相同");
+                    return;
+                }
+            }
+            catch { }
+
+            retargetBtn.Enabled = false;
+            Cursor = Cursors.WaitCursor;
+            try
+            {
+                SleeveRetarget.Run(src, tgt, outp, Log);
+                SaveSettings();
+                MessageBox.Show(this, "重定向完成！\n\n输出文件:\n" + outp, "完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                Log("错误: " + ex.Message);
+                MessageBox.Show(this, "重定向失败，详情见下方日志。", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
+                retargetBtn.Enabled = true;
+            }
         }
 
         void OnAutoPair(object s, EventArgs e)
@@ -586,7 +737,8 @@ class SmdMergeApp
             if (e.KeyCode == Keys.Enter && !e.Shift && !e.Control && !e.Alt)
             {
                 e.SuppressKeyPress = true;
-                OnGo(null, EventArgs.Empty);
+                if (tabs != null && tabs.SelectedIndex == 1) OnRetargetGo(null, EventArgs.Empty);
+                else OnGo(null, EventArgs.Empty);
             }
         }
 
@@ -601,6 +753,16 @@ class SmdMergeApp
             List<string> list = new List<string>();
             foreach (string f in files) if (File.Exists(f)) list.Add(f);
             if (list.Count == 0) return;
+
+            if (tabs != null && tabs.SelectedIndex == 1)
+            {
+                srcBox.Text = list[0];
+                if (list.Count > 1) tgtBox.Text = list[1];
+                AutoFillRetargetOutput();
+                Log("拖入 " + list.Count + " 个文件 → 动作源: " + Path.GetFileName(srcBox.Text.Trim()) +
+                    " / 目标: " + Path.GetFileName(tgtBox.Text.Trim()));
+                return;
+            }
 
             List<string> sorted = new List<string>(list);
             sorted.Sort(delegate(string a, string b)
@@ -687,6 +849,8 @@ class SmdMergeApp
                     else if (k == "mech") { if (File.Exists(v)) mechBox.Text = v; }
                     else if (k == "body") { if (File.Exists(v)) bodyBox.Text = v; }
                     else if (k == "scale") scaleBox.Text = v;
+                    else if (k == "src2") { if (File.Exists(v)) srcBox.Text = v; }
+                    else if (k == "tgt2") { if (File.Exists(v)) tgtBox.Text = v; }
                 }
                 if (baseBox.Text.Trim().Length > 0) Log("已恢复上次的文件与选项（可直接点开始拼接）");
             }
@@ -702,6 +866,8 @@ class SmdMergeApp
                 sb.AppendLine("mech=" + mechBox.Text.Trim());
                 sb.AppendLine("body=" + bodyBox.Text.Trim());
                 sb.AppendLine("scale=" + scaleBox.Text.Trim());
+                sb.AppendLine("src2=" + srcBox.Text.Trim());
+                sb.AppendLine("tgt2=" + tgtBox.Text.Trim());
                 File.WriteAllText(SettingsPath, sb.ToString(), new UTF8Encoding(false));
             }
             catch { }

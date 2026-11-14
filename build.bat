@@ -13,7 +13,7 @@ if not defined CSC (
 )
 
 echo Compiling with: %CSC%
-"%CSC%" /nologo /target:winexe /platform:anycpu /optimize+ /out:smd_merge.exe /r:System.Windows.Forms.dll /r:System.Drawing.dll src\smd_merge_gui.cs
+"%CSC%" /nologo /target:winexe /platform:anycpu /optimize+ /out:smd_merge.exe /r:System.Windows.Forms.dll /r:System.Drawing.dll src\smd_merge_gui.cs src\sleeve_retarget.cs
 if errorlevel 1 (
     echo [ERROR] compile failed. See messages above.
     pause
