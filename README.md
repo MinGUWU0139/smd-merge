@@ -80,3 +80,6 @@ smd_merge.exe --retarget <动作源.smd> <目标骨架静止.smd> [输出.smd]
 ## 坐标约定
 
 SMD 的欧拉角按 `R = Rz(rz) · Ry(ry) · Rx(rx)` 解释（Blender `XYZ` 导出）。
+
+
+## 都是大肥鱼deepseek写的
