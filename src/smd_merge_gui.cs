@@ -44,6 +44,8 @@ class SmdMergeApp
     [STAThread]
     static int Main(string[] args)
     {
+        if (Array.IndexOf(args, "--attach") >= 0)
+            return RunAttachCli(args);
         if (Array.IndexOf(args, "--retarget") >= 0)
             return RunRetargetCli(args);
         if (Array.IndexOf(args, "--cli") >= 0)
@@ -104,6 +106,38 @@ class SmdMergeApp
             {
                 string outp = EnsureSmdExt(files.Count > 2 ? files[2] : DefaultRetargetOutput(files[0]));
                 SleeveRetarget.Run(files[0], files[1], outp, delegate(string s) { sb.Append(s).Append('\n'); });
+                code = 0;
+                try { File.WriteAllText(outp + ".log", sb.ToString(), new UTF8Encoding(false)); } catch { }
+            }
+        }
+        catch (Exception ex) { sb.Append("错误: ").Append(ex.Message).Append('\n'); }
+        return code;
+    }
+
+    // 手臂合并命令行：--attach <手套/袖子模型> <目标骨架> [输出] [--no-align]
+    static int RunAttachCli(string[] args)
+    {
+        List<string> files = new List<string>();
+        bool align = true;
+        for (int i = 0; i < args.Length; i++)
+        {
+            string a = args[i].Trim();
+            if (a.Length == 0 || a == "--attach") continue;
+            if (a == "--no-align" || a == "--align") { align = (a == "--align"); continue; }
+            files.Add(a);
+        }
+        StringBuilder sb = new StringBuilder();
+        int code = 1;
+        try
+        {
+            if (files.Count < 2)
+            {
+                sb.Append("错误: 需要至少两个文件: 手套模型 目标骨架 [输出]\n");
+            }
+            else
+            {
+                string outp = EnsureSmdExt(files.Count > 2 ? files[2] : DefaultAttachOutput(files[0]));
+                GloveAttach.Run(files[0], files[1], outp, align, delegate(string s) { sb.Append(s).Append('\n'); });
                 code = 0;
                 try { File.WriteAllText(outp + ".log", sb.ToString(), new UTF8Encoding(false)); } catch { }
             }
@@ -261,6 +295,13 @@ class SmdMergeApp
         return string.IsNullOrEmpty(dir) ? name : Path.Combine(dir, name);
     }
 
+    static string DefaultAttachOutput(string glovePath)
+    {
+        string dir = Path.GetDirectoryName(glovePath);
+        string name = Path.GetFileNameWithoutExtension(glovePath) + "_attach.smd";
+        return string.IsNullOrEmpty(dir) ? name : Path.Combine(dir, name);
+    }
+
     static string EnsureSmdExt(string path)
     {
         if (string.IsNullOrEmpty(path)) return path;
@@ -401,12 +442,19 @@ class SmdMergeApp
         TextBox out2Box = new TextBox();
         Button retargetBtn = new Button();
 
+        // 页 3：手臂合并（对齐绑定）
+        TextBox gloveBox = new TextBox();
+        TextBox testBox = new TextBox();
+        TextBox out3Box = new TextBox();
+        CheckBox alignChk = new CheckBox();
+        Button attachBtn = new Button();
+
         TabControl tabs;
         Control host;
 
         public MainForm()
         {
-            Text = "SMD 动画拼接工具 v2.1（拼接 + 手臂重定向）";
+            Text = "SMD 动画拼接工具 v2.2（拼接 + 手臂重定向 + 手臂合并）";
             ClientSize = new Size(760, 664);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Microsoft YaHei", 9f);
@@ -422,6 +470,8 @@ class SmdMergeApp
             tabs.TabPages.Add(tab1);
             TabPage tab2 = new TabPage("手臂重定向");
             tabs.TabPages.Add(tab2);
+            TabPage tab3 = new TabPage("手臂合并（对齐绑定）");
+            tabs.TabPages.Add(tab3);
 
             // ---------------- 页 1：三文件拼接 ----------------
             host = tab1;
@@ -479,7 +529,37 @@ class SmdMergeApp
             AddLabel("说明：只输出动画（nodes + skeleton），位置沿用目标模型静止值，", 8, 268);
             AddLabel("旋转按静止姿势坐标系里的世界空间增量重定向。", 8, 290);
 
-            // ---------------- 日志（两页共用） ----------------
+            // ---------------- 页 3：手臂合并（对齐绑定） ----------------
+            host = tab3;
+            AddLabel("① 手套 / 袖子模型（提供网格与骨架，如 v_glove_anarchist.smd）", 8, 14);
+            SetupTextBox(gloveBox, 8, 38, 500);
+            AddButton("浏览...", 516, 38, 90, OnBrowseGlove);
+
+            AddLabel("② 目标骨架（要挂到的模型，如 anarchist_test.smd）", 8, 78);
+            SetupTextBox(testBox, 8, 102, 500);
+            AddButton("浏览...", 516, 102, 90, OnBrowseTest);
+
+            AddLabel("③ 输出文件（留空则自动生成到手套模型旁，文件名 _attach.smd）", 8, 142);
+            SetupTextBox(out3Box, 8, 166, 500);
+            AddButton("另存为...", 516, 166, 90, OnBrowseOut3);
+
+            alignChk.Text = "对齐到目标姿势（逐骨骼重定向网格；不勾则只挂父级、保持原姿势）";
+            alignChk.AutoSize = true;
+            alignChk.Checked = true;
+            alignChk.Location = new Point(8, 208);
+            tab3.Controls.Add(alignChk);
+
+            attachBtn.Text = "开始合并  (回车)";
+            attachBtn.Location = new Point(8, 244);
+            attachBtn.Size = new Size(720, 46);
+            attachBtn.Font = new Font("Microsoft YaHei", 11f, FontStyle.Bold);
+            attachBtn.Click += new EventHandler(OnAttachGo);
+            tab3.Controls.Add(attachBtn);
+
+            AddLabel("说明：输出使用手套的网格；同名骨骼取目标骨架的世界姿势，", 8, 302);
+            AddLabel("手套独有的骨盆/脊柱/锁骨等挂到 root_motion。", 8, 324);
+
+            // ---------------- 日志（三页共用） ----------------
             host = this;
             logBox.Multiline = true;
             logBox.ReadOnly = true;
@@ -624,6 +704,71 @@ class SmdMergeApp
             }
         }
 
+        // ---------------- 页 3：手臂合并 ----------------
+        void OnBrowseGlove(object s, EventArgs e) { BrowseInto(gloveBox, "选择手套 / 袖子模型"); AutoFillAttachOutput(); }
+        void OnBrowseTest(object s, EventArgs e) { BrowseInto(testBox, "选择目标骨架"); }
+
+        void OnBrowseOut3(object s, EventArgs e)
+        {
+            SaveFileDialog d = new SaveFileDialog();
+            d.Filter = "SMD 文件 (*.smd)|*.smd";
+            d.DefaultExt = "smd";
+            d.AddExtension = true;
+            d.Title = "选择输出文件";
+            if (out3Box.Text.Trim().Length > 0) d.FileName = out3Box.Text.Trim();
+            else if (gloveBox.Text.Trim().Length > 0) d.FileName = DefaultAttachOutput(gloveBox.Text.Trim());
+            if (d.ShowDialog(this) == DialogResult.OK) out3Box.Text = d.FileName;
+        }
+
+        void AutoFillAttachOutput()
+        {
+            string gp = gloveBox.Text.Trim();
+            if (gp.Length > 0 && out3Box.Text.Trim().Length == 0) out3Box.Text = DefaultAttachOutput(gp);
+        }
+
+        void OnAttachGo(object s, EventArgs e)
+        {
+            string glove = gloveBox.Text.Trim();
+            string test = testBox.Text.Trim();
+            string outp = out3Box.Text.Trim();
+
+            if (glove.Length == 0) { Log("错误: 请先选择手套 / 袖子模型"); return; }
+            if (test.Length == 0) { Log("错误: 请先选择目标骨架"); return; }
+            if (!File.Exists(glove)) { Log("错误: 手套模型不存在: " + glove); return; }
+            if (!File.Exists(test)) { Log("错误: 目标骨架不存在: " + test); return; }
+            if (outp.Length == 0) { outp = DefaultAttachOutput(glove); out3Box.Text = outp; }
+
+            try
+            {
+                if (string.Equals(Path.GetFullPath(outp), Path.GetFullPath(glove), StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(Path.GetFullPath(outp), Path.GetFullPath(test), StringComparison.OrdinalIgnoreCase))
+                {
+                    Log("错误: 输出文件不能与输入文件相同");
+                    return;
+                }
+            }
+            catch { }
+
+            attachBtn.Enabled = false;
+            Cursor = Cursors.WaitCursor;
+            try
+            {
+                GloveAttach.Run(glove, test, outp, alignChk.Checked, Log);
+                SaveSettings();
+                MessageBox.Show(this, "手臂合并完成！\n\n输出文件:\n" + outp, "完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                Log("错误: " + ex.Message);
+                MessageBox.Show(this, "手臂合并失败，详情见下方日志。", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
+                attachBtn.Enabled = true;
+            }
+        }
+
         void OnAutoPair(object s, EventArgs e)
         {
             string basePath = baseBox.Text.Trim();
@@ -737,7 +882,8 @@ class SmdMergeApp
             if (e.KeyCode == Keys.Enter && !e.Shift && !e.Control && !e.Alt)
             {
                 e.SuppressKeyPress = true;
-                if (tabs != null && tabs.SelectedIndex == 1) OnRetargetGo(null, EventArgs.Empty);
+                if (tabs != null && tabs.SelectedIndex == 2) OnAttachGo(null, EventArgs.Empty);
+                else if (tabs != null && tabs.SelectedIndex == 1) OnRetargetGo(null, EventArgs.Empty);
                 else OnGo(null, EventArgs.Empty);
             }
         }
@@ -753,6 +899,16 @@ class SmdMergeApp
             List<string> list = new List<string>();
             foreach (string f in files) if (File.Exists(f)) list.Add(f);
             if (list.Count == 0) return;
+
+            if (tabs != null && tabs.SelectedIndex == 2)
+            {
+                gloveBox.Text = list[0];
+                if (list.Count > 1) testBox.Text = list[1];
+                AutoFillAttachOutput();
+                Log("拖入 " + list.Count + " 个文件 → 手套: " + Path.GetFileName(gloveBox.Text.Trim()) +
+                    " / 目标: " + Path.GetFileName(testBox.Text.Trim()));
+                return;
+            }
 
             if (tabs != null && tabs.SelectedIndex == 1)
             {
@@ -851,6 +1007,9 @@ class SmdMergeApp
                     else if (k == "scale") scaleBox.Text = v;
                     else if (k == "src2") { if (File.Exists(v)) srcBox.Text = v; }
                     else if (k == "tgt2") { if (File.Exists(v)) tgtBox.Text = v; }
+                    else if (k == "g1") { if (File.Exists(v)) gloveBox.Text = v; }
+                    else if (k == "t1") { if (File.Exists(v)) testBox.Text = v; }
+                    else if (k == "align1") alignChk.Checked = (v == "1");
                 }
                 if (baseBox.Text.Trim().Length > 0) Log("已恢复上次的文件与选项（可直接点开始拼接）");
             }
@@ -868,6 +1027,9 @@ class SmdMergeApp
                 sb.AppendLine("scale=" + scaleBox.Text.Trim());
                 sb.AppendLine("src2=" + srcBox.Text.Trim());
                 sb.AppendLine("tgt2=" + tgtBox.Text.Trim());
+                sb.AppendLine("g1=" + gloveBox.Text.Trim());
+                sb.AppendLine("t1=" + testBox.Text.Trim());
+                sb.AppendLine("align1=" + (alignChk.Checked ? "1" : "0"));
                 File.WriteAllText(SettingsPath, sb.ToString(), new UTF8Encoding(false));
             }
             catch { }
